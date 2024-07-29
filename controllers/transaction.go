@@ -9,6 +9,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func AddTransaction(c echo.Context) error {
@@ -20,6 +21,55 @@ func AddTransaction(c echo.Context) error {
 	// Calculate TotalPrice
 	totalPrice := req.Price * req.Qty
 
+	if req.Op == "S" {
+		// Calculate the remaining quantity of the coin
+		matchStage := bson.D{
+			{Key: "$match", Value: bson.D{
+				{Key: "coin", Value: req.Coin},
+			}},
+		}
+		groupStage := bson.D{
+			{Key: "$group", Value: bson.D{
+				{Key: "_id", Value: "$coin"},
+				{Key: "totalQty", Value: bson.D{
+					{Key: "$sum", Value: bson.D{
+						{Key: "$cond", Value: bson.D{
+							{Key: "if", Value: bson.D{{Key: "$eq", Value: bson.A{"$op", "B"}}}},
+							{Key: "then", Value: "$qty"},
+							{Key: "else", Value: bson.D{{Key: "$multiply", Value: bson.A{"$qty", -1}}}},
+						}},
+					}},
+				}},
+			}},
+		}
+
+		cursor, err := db.Collection.Aggregate(context.TODO(), mongo.Pipeline{matchStage, groupStage})
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, err.Error())
+		}
+		defer cursor.Close(context.TODO())
+
+		var results []struct {
+			TotalQty float64 `bson:"totalQty"`
+		}
+		if err := cursor.All(context.TODO(), &results); err != nil {
+			return c.JSON(http.StatusInternalServerError, err.Error())
+		}
+
+		remainingQty := 0.0
+		if len(results) > 0 {
+			remainingQty = results[0].TotalQty
+		}
+
+		if remainingQty < req.Qty {
+			return c.JSON(http.StatusBadRequest, echo.Map{
+				"error":         "Insufficient quantity for sale",
+				"remaining_qty": remainingQty,
+			})
+		}
+	}
+
+	// Insert the transaction
 	_, err := db.Collection.InsertOne(context.TODO(), models.Transaction{
 		Op:         req.Op,
 		Coin:       req.Coin,
