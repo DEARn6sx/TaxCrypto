@@ -55,7 +55,15 @@ func errorCaseTransaction(err error) *errorCase.ResponseError {
 			Status:  400,
 			Code:    10105,
 			LabelTH: "ไม่สามารถดำเนินการได้ เนื่องจากระบบต้องการค่า Quantity ในพารามิเตอร์",
-			LabelEN: "input Quantity parameter is invalid or missing, please correct the input data",
+			LabelEN: "input Quantity parameter is invalid or missing, please correct the input data.",
+		}
+		return &res
+	case errors.Is(err, errorTransaction.ErrInsufficientQtyQueryParams):
+		res := errorCase.ResponseError{
+			Status:  400,
+			Code:    10106,
+			LabelTH: "ไม่สามารถดำเนินการได้ เนื่องจากปริมาณเหรียญไม่เพียงพอต่อการขาย",
+			LabelEN: "Insufficient quantity for sale.",
 		}
 		return &res
 	}
